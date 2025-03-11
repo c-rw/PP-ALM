@@ -64,14 +64,76 @@ function Get-SolutionVersion {
                               $now.ToString("HHmm")
 }
 
-function Export-Solutions {
+function Export-Solutions-Parallel {
     param ([string]$SolutionName)
     
-    Write-Log "Exporting managed solution..."
-    pac solution export --name $SolutionName --path $ManagedZipPath --managed true
+    # Create script blocks for managed and unmanaged exports
+    $managedScriptBlock = {
+        param ($SolutionName, $ZipPath)
+        pac solution export --name $SolutionName --path $ZipPath --managed true
+        # Return success status
+        if (Test-Path $ZipPath) { return $true } else { return $false }
+    }
     
-    Write-Log "Exporting unmanaged solution..."
-    pac solution export --name $SolutionName --path $UnmanagedZipPath --managed false
+    $unmanagedScriptBlock = {
+        param ($SolutionName, $ZipPath)
+        pac solution export --name $SolutionName --path $ZipPath --managed false
+        # Return success status
+        if (Test-Path $ZipPath) { return $true } else { return $false }
+    }
+    
+    Write-Log "Starting parallel solution exports..."
+    
+    # Start both jobs concurrently
+    $managedJob = Start-Job -ScriptBlock $managedScriptBlock -ArgumentList $SolutionName, $ManagedZipPath
+    $unmanagedJob = Start-Job -ScriptBlock $unmanagedScriptBlock -ArgumentList $SolutionName, $UnmanagedZipPath
+    
+    # Show progress while jobs are running
+    $jobsRunning = $true
+    $spinner = @('|', '/', '-', '\')
+    $spinnerIndex = 0
+    
+    while ($jobsRunning) {
+        $statusMessage = "Exporting solutions $($spinner[$spinnerIndex]) "
+        Write-Host -NoNewline "`r$statusMessage"
+        
+        Start-Sleep -Milliseconds 250
+        $spinnerIndex = ($spinnerIndex + 1) % $spinner.Length
+        
+        # Check if all jobs are completed
+        $jobsRunning = ($managedJob.State -eq 'Running') -or ($unmanagedJob.State -eq 'Running')
+    }
+    
+    Write-Host ""  # Clear the spinner line
+    
+    # Wait for and receive the results
+    $managedResult = Receive-Job -Job $managedJob -Wait
+    $unmanagedResult = Receive-Job -Job $unmanagedJob -Wait
+    
+    # Clean up jobs
+    Remove-Job -Job $managedJob, $unmanagedJob
+    
+    # Check results
+    if (-not $managedResult) {
+        Write-Log "Warning: Managed solution export may have failed"
+    } else {
+        Write-Log "Managed solution export completed"
+    }
+    
+    if (-not $unmanagedResult) {
+        Write-Log "Warning: Unmanaged solution export may have failed"
+    } else {
+        Write-Log "Unmanaged solution export completed"
+    }
+    
+    # Verify files exist
+    if (!(Test-Path $ManagedZipPath)) {
+        throw "Managed solution export failed: File not found at $ManagedZipPath"
+    }
+    
+    if (!(Test-Path $UnmanagedZipPath)) {
+        throw "Unmanaged solution export failed: File not found at $UnmanagedZipPath"
+    }
 }
 
 function Expand-CanvasApps {
@@ -200,7 +262,8 @@ try {
         Write-Log "Setting solution version to $version"
         pac solution online-version --solution-name $config.SolutionName --solution-version $version
         
-        Export-Solutions -SolutionName $config.SolutionName
+        # Use the parallel export function instead of the sequential one
+        Export-Solutions-Parallel -SolutionName $config.SolutionName
         
         Write-Log "Unpacking unmanaged solution..."
         pac solution unpack -z $UnmanagedZipPath -f $UnmanagedFolderPath
