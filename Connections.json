@@ -1,0 +1,26 @@
+{
+    "Prod": {
+      "/providers/Microsoft.PowerApps/apis/shared_approvals": "",
+      "/providers/Microsoft.PowerApps/apis/shared_office365": "",
+      "/providers/Microsoft.PowerApps/apis/shared_sharepointonline": "",
+      "/providers/Microsoft.PowerApps/apis/shared_powerbi": "",
+      "/providers/Microsoft.PowerApps/apis/shared_office365users": "",
+      "/providers/Microsoft.PowerApps/apis/shared_office365groups": "",
+      "/providers/Microsoft.PowerApps/apis/shared_onedriveforbusiness": "",
+      "/providers/Microsoft.PowerApps/apis/shared_teams": "",
+      "/providers/Microsoft.PowerApps/apis/shared_wordonlinebusiness": "",
+      "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps": ""
+    },
+    "Test": {
+      "/providers/Microsoft.PowerApps/apis/shared_approvals": "",
+      "/providers/Microsoft.PowerApps/apis/shared_office365": "",
+      "/providers/Microsoft.PowerApps/apis/shared_sharepointonline": "",
+      "/providers/Microsoft.PowerApps/apis/shared_powerbi": "",
+      "/providers/Microsoft.PowerApps/apis/shared_office365users": "",
+      "/providers/Microsoft.PowerApps/apis/shared_office365groups": "",
+      "/providers/Microsoft.PowerApps/apis/shared_onedriveforbusiness": "",
+      "/providers/Microsoft.PowerApps/apis/shared_teams": "",
+      "/providers/Microsoft.PowerApps/apis/shared_wordonlinebusiness": "",
+      "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps": ""
+    }
+  }
