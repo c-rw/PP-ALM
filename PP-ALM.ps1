@@ -4,7 +4,10 @@ param (
     [string]$ConfigPath = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "config/config.json"),
     
     [Parameter(Mandatory=$false)]
-    [string]$EnvironmentUrl = "",
+    [string]$ConnectionsPath = (Join-Path $PSScriptRoot "Connections.json"),
+    
+    [Parameter(Mandatory=$false)]
+    [string]$EnvironmentUrl = "https://org3babe93d.crm9.dynamics.com",
     
     [Parameter(Mandatory=$false)]
     [switch]$Install
@@ -36,12 +39,12 @@ function Test-Prerequisites {
     return $config
 }
 
-function Test-PacCli {
-    $pacVersion = & pac help --version 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "PowerApps CLI (PAC) is not installed or not in PATH"
+function Test-ConnectionsJson {
+    if (!(Test-Path $ConnectionsPath)) {
+        Write-Log "Warning: Connections.json not found at: $ConnectionsPath. Connection IDs will not be updated."
+        return $false
     }
-    Write-Log "PAC CLI Version: $pacVersion"
+    return $true
 }
 
 function Initialize-Directories {
@@ -92,6 +95,79 @@ function New-DeploymentSettings {
     }
 }
 
+function Update-ConnectionReferences {
+    param (
+        [string]$ConnectionsJsonPath
+    )
+    
+    if (!(Test-Path $ConnectionsJsonPath)) {
+        Write-Log "Connections.json not found. Skipping connection reference updates."
+        return
+    }
+    
+    try {
+        $connectionsData = Get-Content $ConnectionsJsonPath -Raw | ConvertFrom-Json
+        
+        # Process Test.json
+        $testJsonPath = Join-Path $ConfigFolder "test.json"
+        if (Test-Path $testJsonPath) {
+            Write-Log "Updating connection references in test.json..."
+            Update-ConnectionIds -ConfigFilePath $testJsonPath -ConnectionsData $connectionsData -Environment "Test"
+        }
+        
+        # Process Prod.json
+        $prodJsonPath = Join-Path $ConfigFolder "prod.json"
+        if (Test-Path $prodJsonPath) {
+            Write-Log "Updating connection references in prod.json..."
+            Update-ConnectionIds -ConfigFilePath $prodJsonPath -ConnectionsData $connectionsData -Environment "Prod"
+        }
+    }
+    catch {
+        Write-Log "Error updating connection references: $_"
+    }
+}
+
+function Update-ConnectionIds {
+    param (
+        [string]$ConfigFilePath,
+        [PSCustomObject]$ConnectionsData,
+        [string]$Environment
+    )
+    
+    # Read the config file
+    $configJson = Get-Content $ConfigFilePath -Raw | ConvertFrom-Json
+    $modified = $false
+    
+    # Check if ConnectionReferences exists
+    if ($configJson.ConnectionReferences) {
+        foreach ($reference in $configJson.ConnectionReferences) {
+            $connectorId = $reference.ConnectorId
+            
+            # Check if this connector ID exists in the connections data for this environment
+            if ($ConnectionsData.$Environment.$connectorId) {
+                $connectionId = $ConnectionsData.$Environment.$connectorId
+                
+                # Update the connection ID
+                $reference.ConnectionId = $connectionId
+                $modified = $true
+                Write-Log "  Updated $($reference.LogicalName) with connection ID: $connectionId"
+            }
+        }
+        
+        # Save the updated config file if changes were made
+        if ($modified) {
+            $configJson | ConvertTo-Json -Depth 20 | Set-Content $ConfigFilePath
+            Write-Log "  Saved updated connection references to $ConfigFilePath"
+        }
+        else {
+            Write-Log "  No matching connection references found to update in $ConfigFilePath"
+        }
+    }
+    else {
+        Write-Log "  No ConnectionReferences found in $ConfigFilePath"
+    }
+}
+
 function Install-Solution {
     param ([string]$SolutionPath, [string]$EnvironmentUrl)
     
@@ -111,13 +187,13 @@ function Install-Solution {
 }
 
 try {
-    Test-PacCli
     Initialize-Paths
     
     if ($Install) {
         Install-Solution -SolutionPath $UnmanagedZipPath -EnvironmentUrl $EnvironmentUrl
     } else {
         $config = Test-Prerequisites
+        $hasConnectionsJson = Test-ConnectionsJson
         Initialize-Directories
         
         $version = Get-SolutionVersion
@@ -131,6 +207,12 @@ try {
         
         Expand-CanvasApps
         New-DeploymentSettings
+        
+        # Update connection references if Connections.json is available
+        if ($hasConnectionsJson) {
+            Write-Log "Updating connection references from Connections.json..."
+            Update-ConnectionReferences -ConnectionsJsonPath $ConnectionsPath
+        }
     }
     
     Write-Log "Script completed successfully"
