@@ -9,7 +9,7 @@ PP-ALM automates Power Platform solution management, deployment, and installatio
 - 🔄 Parallel solution export for both managed and unmanaged packages
 - 📦 Canvas App extraction and unpacking
 - ⚙️ Multi-environment configuration with automatic version numbering
-- 🚀 Integrated solution installation
+- 🚀 Integrated solution installation (both managed and unmanaged)
 - 🔌 Connection reference management between environments
 
 ## Prerequisites
@@ -62,8 +62,17 @@ git submodule update --init --recursive
 ```
 
 ```powershell
-# For solution installation
+# For unmanaged solution installation (using the authenticated environment)
+.\tools\pp-alm\PP-ALM.ps1 -Install
+
+# For unmanaged solution installation (specifying an environment URL)
 .\tools\pp-alm\PP-ALM.ps1 -Install -EnvironmentUrl "https://yourenvironment.crm.dynamics.com"
+
+# For managed solution installation (using the authenticated environment)
+.\tools\pp-alm\PP-ALM.ps1 -Install -Managed
+
+# For managed solution installation (specifying an environment URL)
+.\tools\pp-alm\PP-ALM.ps1 -Install -Managed -EnvironmentUrl "https://yourenvironment.crm.dynamics.com"
 ```
 
 ## Script Parameters
@@ -72,8 +81,9 @@ git submodule update --init --recursive
 |-----------|-------------|---------|
 | -ConfigPath | Path to config.json | ./config/config.json |
 | -ConnectionsPath | Path to Connections.json | ./tools/pp-alm/Connections.json |
-| -EnvironmentUrl | Dynamics 365 environment URL | <https://org3babe93d.crm9.dynamics.com> |
+| -EnvironmentUrl | Dynamics 365 environment URL (optional, uses currently authenticated environment if not specified) | None |
 | -Install | Switch to perform solution installation | False |
+| -Managed | When used with -Install, installs the managed solution package | False |
 
 ## Repository Structure
 
@@ -122,6 +132,11 @@ Solutions are exported in parallel processes to improve performance:
 ### Connection Reference Management
 
 Using Connections.json, the script automatically updates connection references in environment-specific configuration files for consistent deployment across environments.
+
+### Managed vs Unmanaged Installation
+
+- **Unmanaged Installation**: Default mode when using `-Install`. Installs solutions that remain editable in the target environment. Ideal for development and test environments.
+- **Managed Installation**: Used with `-Install -Managed`. Installs solutions that cannot be edited in the target environment. Recommended for production environments.
 
 ## Troubleshooting
 

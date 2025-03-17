@@ -7,10 +7,13 @@ param (
     [string]$ConnectionsPath = (Join-Path $PSScriptRoot "Connections.json"),
     
     [Parameter(Mandatory=$false)]
-    [string]$EnvironmentUrl = "https://org3babe93d.crm9.dynamics.com",
+    [string]$EnvironmentUrl,
     
     [Parameter(Mandatory=$false)]
-    [switch]$Install
+    [switch]$Install,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$Managed
 )
 
 function Write-Log {
@@ -231,28 +234,76 @@ function Update-ConnectionIds {
 }
 
 function Install-Solution {
-    param ([string]$SolutionPath, [string]$EnvironmentUrl)
+    param (
+        [string]$SolutionPath, 
+        [string]$EnvironmentUrl,
+        [string]$SolutionType = "Unmanaged"
+    )
     
     if (-not (Test-Path $SolutionPath)) {
         throw "Solution file not found at: $SolutionPath"
     }
     
-    if (-not ($EnvironmentUrl -match '^https:\/\/[a-zA-Z0-9.-]+\.dynamics\.com$')) {
-        throw "Invalid Environment URL format"
+    # Check if environment URL is provided and valid
+    if (-not [string]::IsNullOrWhiteSpace($EnvironmentUrl)) {
+        if (-not ($EnvironmentUrl -match '^https:\/\/[a-zA-Z0-9.-]+\.dynamics\.com$')) {
+            throw "Invalid Environment URL format: $EnvironmentUrl"
+        }
+        
+        Write-Log "Importing $SolutionType solution to $EnvironmentUrl..."
+    } else {
+        Write-Log "Importing $SolutionType solution to current authenticated environment..."
     }
     
-    Write-Log "Importing solution..."
-    $importResult = & pac solution import -f -a -pc -p $SolutionPath 2>&1
+    # Build import command based on environment URL
+    $importCommand = if ([string]::IsNullOrWhiteSpace($EnvironmentUrl)) {
+        "pac solution import -f -a -pc -p `"$SolutionPath`""
+    } else {
+        "pac solution import -f -a -pc -p `"$SolutionPath`""
+    }
+    
+    # Execute import command
+    $importResult = Invoke-Expression $importCommand 2>&1
     if ($LASTEXITCODE -ne 0) {
         throw "Solution import failed: $importResult"
     }
+    
+    Write-Log "Successfully imported $SolutionType solution"
 }
 
 try {
     Initialize-Paths
     
     if ($Install) {
-        Install-Solution -SolutionPath $UnmanagedZipPath -EnvironmentUrl $EnvironmentUrl
+        # Set appropriate solution path and type based on the Managed flag
+        $solutionType = if ($Managed) { "Managed" } else { "Unmanaged" }
+        $solutionPath = if ($Managed) { $ManagedZipPath } else { $UnmanagedZipPath }
+        $isManagedFlag = if ($Managed) { "true" } else { "false" }
+        
+        # Check if solution exists
+        if (!(Test-Path $solutionPath)) {
+            # Try to export solution if it doesn't exist
+            Write-Log "$solutionType solution package not found. Attempting to export..."
+            $config = Test-Prerequisites
+            
+            # Create solution export job
+            $exportScriptBlock = {
+                param ($SolutionName, $ZipPath, $IsManagedFlag)
+                pac solution export --name $SolutionName --path $ZipPath --managed $IsManagedFlag
+                if (Test-Path $ZipPath) { return $true } else { return $false }
+            }
+            
+            $exportJob = Start-Job -ScriptBlock $exportScriptBlock -ArgumentList $config.SolutionName, $solutionPath, $isManagedFlag
+            Write-Log "Exporting $solutionType solution..."
+            $null = Receive-Job -Job $exportJob -Wait
+            Remove-Job -Job $exportJob
+            
+            if (!(Test-Path $solutionPath)) {
+                throw "Failed to export $solutionType solution. Please run the script without -Install first to generate the solution packages."
+            }
+        }
+        
+        Install-Solution -SolutionPath $solutionPath -EnvironmentUrl $EnvironmentUrl -SolutionType $solutionType
     } else {
         $config = Test-Prerequisites
         $hasConnectionsJson = Test-ConnectionsJson
